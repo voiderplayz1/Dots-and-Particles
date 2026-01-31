@@ -80,19 +80,19 @@
         <p>
             You may use the config on the top left to control how this simulation works.<br><br>
             In the top right you can see your FPS, a full screen mode, and a GUI hide button.<br><br>
-            To use Cymatic mode, turn the mode on and start playing the 7 songs I've added, you may skip them at any time.
+            To use Cymatic mode, turn the mode on and start playing the 7 songs I've added, you may skip them at any time. If an ad appears, use the "Skip Track" feature to skip them, or use an ad blocker.
         </p>
-        <div class="init-prompt">CLICK ANYWHERE TO BEGIN</div>
+        <div class="init-prompt">Click anywhere to begin!</div>
     </div>
 
     <div id="stats-ui">
         <div id="fpsCounter">FPS: 0</div>
-        <button id="fs-btn" style="background:none; border:1px solid #333; color:#fff; font-size:8px; margin-top:5px; width:100%;">FULLSCREEN</button>
-        <button id="toggle-gui-btn" style="background:none; border:1px solid #333; color:#fff; font-size:8px; margin-top:5px; width:100%;">HIDE INTERFACE</button>
+        <button id="fs-btn" style="background:none; border:1px solid #333; color:#fff; font-size:8px; margin-top:5px; width:100%;">Fullscreen</button>
+        <button id="toggle-gui-btn" style="background:none; border:1px solid #333; color:#fff; font-size:8px; margin-top:5px; width:100%;">Hide Interface</button>
     </div>
     
     <div id="ui">
-        <div id="statusText" style="margin-bottom:10px; font-weight:bold; color:#00ffcc;">CORE STABLE</div>
+        <div id="statusText" style="margin-bottom:10px; font-weight:bold; color:#00ffcc;">Particles</div>
         <div class="slider-group"><label>Particles <span id="pCount" class="val">50,000</span></label><input type="range" id="pSlider" min="1000" max="1500000" step="1000" value="50000"></div>
         <div class="slider-group"><label>Explosion <span id="ePower" class="val">1200</span></label><input type="range" id="eSlider" min="50" max="5000" step="50" value="1200"></div>
         <div class="slider-group"><label>Drift <span id="fVal" class="val">3.0</span></label><input type="range" id="fSlider" min="1" max="5" step="0.1" value="3.0"></div>
@@ -114,7 +114,7 @@
 
     <div id="music-ui">
         <div class="time-display"><span id="cur-time">0</span>s / <span id="total-time">0</span>s</div>
-        <div id="song-name-top" class="song-info-right">AWAITING INPUT...</div>
+        <div id="song-name-top" class="song-info-right">Awaiting Input.. (press play to start it)</div>
         <input type="range" id="music-progress" value="0">
         
         <div class="slider-group">
@@ -123,8 +123,8 @@
         </div>
 
         <div class="btn-container">
-            <button id="play-pause-btn">PLAY</button>
-            <button id="next-track-btn">NEXT TRACK</button>
+            <button id="play-pause-btn">Play</button>
+            <button id="next-track-btn">Next Track</button>
         </div>
     </div>
 
@@ -148,7 +148,6 @@
         function initializeSystem() {
             document.getElementById('init-overlay').style.display = 'none';
             if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(e => console.log("Fullscreen blocked"));
-            // Music start removed here to allow manual control as requested
         }
 
         function onYouTubeIframeAPIReady() {
