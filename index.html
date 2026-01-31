@@ -25,7 +25,8 @@
             margin-bottom: 30px; text-transform: uppercase;
         }
 
-        .init-prompt { font-size: 12px; color: #00ffcc; animate: pulse 2s infinite; }
+        .init-prompt { font-size: 12px; color: #00ffcc; animation: pulse 2s infinite; }
+        @keyframes pulse { 0% { opacity: 0.5; } 50% { opacity: 1; } 100% { opacity: 0.5; } }
 
         #ui, #music-ui {
             position: absolute; color: #fff; font-family: 'Segoe UI', Tahoma, sans-serif;
@@ -80,7 +81,7 @@
         <p>
             You may use the config on the top left to control how this simulation works.<br><br>
             In the top right you can see your FPS, a full screen mode, and a GUI hide button.<br><br>
-            To use Cymatic mode, turn the mode on and start playing the 7 songs I've added, you may skip them at any time. If an ad appears, use the "Skip Track" feature to skip them, or use an ad blocker.
+            To use Cymatic mode, turn the mode on and start playing the 7 songs I've added, you may skip them at any time. If an ad appears, use the "Skip Ad" feature to refresh the track without losing your place.
         </p>
         <div class="init-prompt">Click anywhere to begin!</div>
     </div>
@@ -114,7 +115,7 @@
 
     <div id="music-ui">
         <div class="time-display"><span id="cur-time">0</span>s / <span id="total-time">0</span>s</div>
-        <div id="song-name-top" class="song-info-right">Awaiting Input.. (press play to start it)</div>
+        <div id="song-name-top" class="song-info-right">Awaiting Input..</div>
         <input type="range" id="music-progress" value="0">
         
         <div class="slider-group">
@@ -124,6 +125,7 @@
 
         <div class="btn-container">
             <button id="play-pause-btn">Play</button>
+            <button id="skip-ad-btn" style="border-color: #ffcc00; color: #ffcc00;">Skip Ad</button>
             <button id="next-track-btn">Next Track</button>
         </div>
     </div>
@@ -153,20 +155,23 @@
         function onYouTubeIframeAPIReady() {
             player = new YT.Player('yt-player', {
                 height: '0', width: '0', videoId: tracks[tIdx],
-                playerVars: { 'autoplay': 0, 'controls': 0 },
+                playerVars: { 'autoplay': 0, 'controls': 0, 'disablekb': 1 },
                 events: { 
                     'onReady': (e) => { e.target.setVolume(50); },
                     'onStateChange': (e) => { 
                         isMusicPlaying = (e.data === YT.PlayerState.PLAYING);
                         document.getElementById('play-pause-btn').innerText = isMusicPlaying ? "PAUSE" : "PLAY";
-                        if(e.data === YT.PlayerState.ENDED) playNext();
+                        if(e.data === YT.PlayerState.ENDED) playNext(false);
                     }
                 }
             });
         }
 
-        function playNext() {
-            tIdx = (tIdx + 1) % tracks.length;
+        // Logic fix: isAdSkip determines if we stay on current index or move forward
+        function playNext(isAdSkip = false) {
+            if (!isAdSkip) {
+                tIdx = (tIdx + 1) % tracks.length;
+            }
             player.loadVideoById(tracks[tIdx]);
         }
 
@@ -176,7 +181,9 @@
                 document.getElementById('cur-time').innerText = Math.floor(cur);
                 document.getElementById('total-time').innerText = Math.floor(dur);
                 document.getElementById('music-progress').value = (cur / dur) * 100;
-                document.getElementById('song-name-top').innerText = player.getVideoData().title;
+                
+                let title = player.getVideoData().title;
+                if (title) document.getElementById('song-name-top').innerText = title;
             }
         }, 500);
 
@@ -328,7 +335,8 @@
         document.getElementById('music-progress').oninput = (e) => player.seekTo((e.target.value/100)*player.getDuration(), true);
         document.getElementById('music-vol-control').oninput = function() { player.setVolume(this.value); document.getElementById('mVolVal').innerText = this.value+'%'; };
         document.getElementById('play-pause-btn').onclick = () => isMusicPlaying ? player.pauseVideo() : player.playVideo();
-        document.getElementById('next-track-btn').onclick = () => playNext();
+        document.getElementById('next-track-btn').onclick = () => playNext(false);
+        document.getElementById('skip-ad-btn').onclick = () => playNext(true); // Special case for ad skipping
         document.getElementById('cymaticBtn').onclick = function() { cymaticActive=!cymaticActive; this.classList.toggle('cymatic-active'); this.innerText=`CYMATIC_PATH: ${cymaticActive?'ON':'OFF'}`; };
         document.getElementById('bhBtn').onclick = function() { blackHoleActive=!blackHoleActive; this.classList.toggle('active'); this.innerText=`BLACK_HOLE: ${blackHoleActive?'ON':'OFF'}`; };
         document.getElementById('btnWebGL').onclick = function() { mode='webgl'; glCanvas.style.display='block'; c2dCanvas.style.display='none'; this.classList.add('active'); document.getElementById('btnCanvas').classList.remove('active'); };
