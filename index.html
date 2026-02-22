@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dots and Particles</title>
+    <title>Dots and Particles 3D</title>
     <style>
         body { margin: 0; overflow: hidden; background: #000; cursor: crosshair; }
         canvas { display: block; position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; }
@@ -25,7 +25,7 @@
             margin-bottom: 30px; text-transform: uppercase;
         }
 
-        .init-prompt { font-size: 12px; color: #00ffcc; animate: pulse 2s infinite; }
+        .init-prompt { font-size: 12px; color: #00ffcc; }
 
         #ui, #music-ui {
             position: absolute; color: #fff; font-family: 'Segoe UI', Tahoma, sans-serif;
@@ -71,6 +71,15 @@
         button.cymatic-active { background: #ff00ff; color: #fff; border-color: #ff00ff; box-shadow: 0 0 15px rgba(255,0,255,0.4); }
         
         #yt-player { display: none; }
+
+        .section-divider {
+            border: none; border-top: 1px solid rgba(255,255,255,0.08);
+            margin: 10px 0;
+        }
+
+        .section-label {
+            font-size: 8px; color: #444; letter-spacing: 2px; margin-bottom: 8px; margin-top: 4px;
+        }
     </style>
 </head>
 <body>
@@ -80,24 +89,37 @@
         <p>
             You may use the config on the top left to control how this simulation works.<br><br>
             In the top right you can see your FPS, a full screen mode, and a GUI hide button.<br><br>
-            To use Cymatic mode, turn the mode on and start playing the 7 songs I've added, you may skip them at any time. If an ad appears, use the "Skip Track" feature to skip them, or use an ad blocker.
+            Particles now exist in <strong>3D space</strong> and orbit around a fixed Z=0 plane with perspective projection.
+            Z movement is disabled in Cymatic mode (which stays planar by design).<br><br>
+            To use Cymatic mode, turn the mode on and start playing the songs. If an ad appears, use "Next Track" to skip it.
         </p>
         <div class="init-prompt">Click anywhere to begin!</div>
     </div>
 
     <div id="stats-ui" onmousedown="event.stopPropagation()">
         <div id="fpsCounter">FPS: 0</div>
+        <div id="zDepthDisplay" style="color:#888; font-size:9px; margin-top:4px;">Z: 0.00</div>
         <button id="fs-btn" style="background:none; border:1px solid #333; color:#fff; font-size:8px; margin-top:5px; width:100%;">Fullscreen</button>
         <button id="toggle-gui-btn" style="background:none; border:1px solid #333; color:#fff; font-size:8px; margin-top:5px; width:100%;">Hide Interface</button>
     </div>
     
     <div id="ui" onmousedown="event.stopPropagation()">
-        <div id="statusText" style="margin-bottom:10px; font-weight:bold; color:#00ffcc;">Particles</div>
+        <div id="statusText" style="margin-bottom:10px; font-weight:bold; color:#00ffcc;">Particles 3D</div>
+
+        <div class="section-label">— Particle Config —</div>
         <div class="slider-group"><label>Total Particles <span id="pCount" class="val">50,000</span></label><input type="range" id="pSlider" min="1000" max="1500000" step="1000" value="50000"></div>
         <div class="slider-group"><label>Explosive Power <span id="ePower" class="val">1200</span></label><input type="range" id="eSlider" min="50" max="5000" step="50" value="1200"></div>
         <div class="slider-group"><label>Particle Drift <span id="fVal" class="val">3.0</span></label><input type="range" id="fSlider" min="1" max="5" step="0.1" value="3.0"></div>
         <div class="slider-group"><label>Spiral Speed / Distance <span id="sVal" class="val">1.6</span></label><input type="range" id="sSlider" min="0.1" max="5" step="0.1" value="1.6"></div>
-        
+
+        <hr class="section-divider">
+        <div class="section-label">— 3D Space —</div>
+        <div class="slider-group"><label>Z Depth Scale <span id="dVal" class="val">0.7</span></label><input type="range" id="dSlider" min="0.1" max="2.0" step="0.05" value="0.7"></div>
+        <div class="slider-group"><label>Plane Spring (pull to Z=0) <span id="spVal" class="val">0.004</span></label><input type="range" id="spSlider" min="0.0005" max="0.04" step="0.0005" value="0.004"></div>
+        <div class="slider-group"><label>Z Scatter on Explode <span id="zsVal" class="val">0.5</span></label><input type="range" id="zsSlider" min="0.0" max="1.0" step="0.05" value="0.5"></div>
+
+        <hr class="section-divider">
+        <div class="section-label">— Color —</div>
         <div class="slider-group">
             <label>Spectrum</label>
             <div style="display:flex; gap:5px;">
@@ -136,12 +158,15 @@
     <script src="https://www.youtube.com/iframe_api"></script>
 
     <script>
+        // ─── State ───────────────────────────────────────────────────────────────────
         let mode = 'webgl', count = 50000, explosionStrength = 1200, driftFactor = 3.0, swirlForce = 1.6;
         let blackHoleActive = false, cymaticActive = false, lastExplosionTime = 0;
         let isMusicPlaying = false, instantVol = 0;
+        let depthScale = 0.7;         // perspective FOV strength
+        let planeSpring = 0.004;      // spring force pulling Z back to 0
+        let zScatter = 0.5;           // how much Z scatter on explosion
         const mouse = { x: 0, y: 0, isDown: false, wasDown: false, glX: 0, glY: 0 };
-        // Removed curve from initial obj, will calculate dynamically
-        let cPos = { x: 0, y: 0, vx: 0.005, vy: 0.005, timer: 0 }; 
+        let cPos = { x: 0, y: 0, vx: 0.005, vy: 0.005, timer: 0 };
 
         let player;
         const tracks = ['L_UBFnwaOgY', 'QRk3y0DXgIA', '76r8I6OPQ8I', 'Jmq9rNu5PbQ', 'zfIYnH6tsZ0', 'Uxf49TvA-Eg', 'nl14x1ZhC-k', 'Ec-M_HXuS8k', '1M4Xyr1CEzQ', 'Xg7WQc8_Ogs', 'C4NUAw8Dv3Q'];
@@ -149,7 +174,7 @@
 
         function initializeSystem() {
             document.getElementById('init-overlay').style.display = 'none';
-            if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(e => console.log("Fullscreen blocked"));
+            if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(e => {});
         }
 
         function onYouTubeIframeAPIReady() {
@@ -167,15 +192,8 @@
             });
         }
 
-        function playNext() {
-            tIdx = (tIdx + 1) % tracks.length;
-            player.loadVideoById(tracks[tIdx]);
-        }
-        
-        function playPrev() {
-            tIdx = (tIdx - 1 + tracks.length) % tracks.length;
-            player.loadVideoById(tracks[tIdx]);
-        }
+        function playNext() { tIdx = (tIdx + 1) % tracks.length; player.loadVideoById(tracks[tIdx]); }
+        function playPrev() { tIdx = (tIdx - 1 + tracks.length) % tracks.length; player.loadVideoById(tracks[tIdx]); }
 
         setInterval(() => {
             if(player && typeof player.getCurrentTime === 'function' && player.getPlayerState() === 1) {
@@ -187,13 +205,19 @@
             }
         }, 500);
 
+        // ─── Canvas & GL setup ───────────────────────────────────────────────────────
         const glCanvas = document.getElementById('glCanvas'), c2dCanvas = document.getElementById('c2dCanvas');
         const gl = glCanvas.getContext('webgl', { antialias: false });
         const ctx = c2dCanvas.getContext('2d', { alpha: false });
 
         const MAX = 1500000;
-        const posArr = new Float32Array(MAX * 2), velArr = new Float32Array(MAX * 2), 
-              colArr = new Float32Array(MAX * 3), speedArr = new Float32Array(MAX), sizeArr = new Float32Array(MAX);
+
+        // Now 3 floats per particle: x, y, z
+        const posArr = new Float32Array(MAX * 3);
+        const velArr = new Float32Array(MAX * 3);
+        const colArr = new Float32Array(MAX * 3);
+        const speedArr = new Float32Array(MAX);
+        const sizeArr  = new Float32Array(MAX);
 
         function updateColors() {
             const hex = [document.getElementById('c1').value, document.getElementById('c2').value, document.getElementById('c3').value];
@@ -213,30 +237,90 @@
         window.onresize = resize;
         window.onmousemove = e => { 
             mouse.x = e.clientX; mouse.y = e.clientY;
-            mouse.glX = (e.clientX/window.innerWidth)*2-1; 
-            mouse.glY = (e.clientY/window.innerHeight)*-2+1; 
+            mouse.glX = (e.clientX / window.innerWidth) * 2 - 1; 
+            mouse.glY = (e.clientY / window.innerHeight) * -2 + 1; 
         };
-        // grug
-        window.onmousedown = (e) => { mouse.isDown = true; };
-        window.onmouseup = () => mouse.isDown = false;
+        window.onmousedown = () => { mouse.isDown = true; };
+        window.onmouseup   = () => { mouse.isDown = false; };
+
+        // ─── WebGL Shaders ───────────────────────────────────────────────────────────
+        // Vertex shader: perspective-project the 3D position onto the screen.
+        // Camera sits at z = -camDist looking toward +Z.
+        // Projected XY = position.xy * (camDist / (camDist + z))
+        // depthScale uniform controls the FOV feel.
+        const vsSource = `
+            attribute vec3 a_p;
+            attribute vec3 a_c;
+            attribute float a_s;
+            uniform float u_depthScale;
+            varying vec3 v_c;
+            varying float v_depth;
+            void main(){
+                float camDist = 2.0;
+                float dz = camDist + a_p.z * u_depthScale;
+                float persp = camDist / max(dz, 0.1);
+                gl_Position = vec4(a_p.x * persp, a_p.y * persp, 0.0, 1.0);
+                gl_PointSize = a_s * persp;
+                v_c = a_c;
+                v_depth = persp; // >1 = closer, <1 = farther
+            }
+        `;
+
+        // Fragment shader: modulate brightness by depth so distant particles fade slightly
+        const fsSource = `
+            precision mediump float;
+            varying vec3 v_c;
+            varying float v_depth;
+            void main(){
+                // depth clamp: closer = brighter, farther = slightly dimmer
+                float brightness = clamp(v_depth * 0.8 + 0.3, 0.15, 1.2);
+                gl_FragColor = vec4(v_c * brightness, 1.0);
+            }
+        `;
 
         const prg = gl.createProgram();
-        const sh = (t, s) => { const s_obj = gl.createShader(t); gl.shaderSource(s_obj, s); gl.compileShader(s_obj); gl.attachShader(prg, s_obj); };
-        sh(gl.VERTEX_SHADER, `attribute vec2 a_p; attribute vec3 a_c; attribute float a_s; varying vec3 v_c; void main(){ gl_Position=vec4(a_p,0,1); gl_PointSize=a_s; v_c=a_c; }`);
-        sh(gl.FRAGMENT_SHADER, `precision mediump float; varying vec3 v_c; void main(){ gl_FragColor=vec4(v_c, 1.0); }`);
-        gl.linkProgram(prg); gl.useProgram(prg);
+        const makeShader = (type, src) => {
+            const s = gl.createShader(type);
+            gl.shaderSource(s, src); gl.compileShader(s);
+            if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) console.error(gl.getShaderInfoLog(s));
+            gl.attachShader(prg, s);
+        };
+        makeShader(gl.VERTEX_SHADER, vsSource);
+        makeShader(gl.FRAGMENT_SHADER, fsSource);
+        gl.linkProgram(prg);
+        if (!gl.getProgramParameter(prg, gl.LINK_STATUS)) console.error(gl.getProgramInfoLog(prg));
+        gl.useProgram(prg);
 
-        for(let i=0; i<MAX; i++) {
-            posArr[i*2]=Math.random()*2-1; posArr[i*2+1]=Math.random()*2-1;
-            speedArr[i]=0.006+Math.random()*0.01; sizeArr[i]=1.5+Math.random();
+        const uDepthScale = gl.getUniformLocation(prg, 'u_depthScale');
+        const aPos   = gl.getAttribLocation(prg, 'a_p');
+        const aCol   = gl.getAttribLocation(prg, 'a_c');
+        const aSize  = gl.getAttribLocation(prg, 'a_s');
+
+        // ─── Initialize Particles ────────────────────────────────────────────────────
+        for(let i = 0; i < MAX; i++) {
+            posArr[i*3]   = Math.random() * 2 - 1;          // x
+            posArr[i*3+1] = Math.random() * 2 - 1;          // y
+            posArr[i*3+2] = (Math.random() - 0.5) * 0.6;   // z — start near the plane
+            speedArr[i]   = 0.006 + Math.random() * 0.01;
+            sizeArr[i]    = 1.5 + Math.random();
         }
         updateColors();
-        const pBuf = gl.createBuffer(), cBuf = gl.createBuffer(), sBuf = gl.createBuffer();
-        let lastT = 0, frames = 0, nextFps = 0;
 
+        const pBuf = gl.createBuffer(), cBuf = gl.createBuffer(), sBuf = gl.createBuffer();
+
+        // ─── FPS + Z display ─────────────────────────────────────────────────────────
+        let lastT = 0, frames = 0, nextFps = 0;
+        let avgZ = 0;
+
+        // ─── Main Loop ───────────────────────────────────────────────────────────────
         function animate(now) {
-            const dt = (now - lastT) / 16.67; lastT = now; frames++;
-            if(now > nextFps) { document.getElementById('fpsCounter').innerText = `FPS: ${frames}`; frames=0; nextFps=now+1000; }
+            const dt = Math.min((now - lastT) / 16.67, 3); // cap dt to avoid spiraling
+            lastT = now; frames++;
+            if(now > nextFps) {
+                document.getElementById('fpsCounter').innerText = `FPS: ${frames}`;
+                document.getElementById('zDepthDisplay').innerText = `Z avg: ${(avgZ / count).toFixed(3)}`;
+                frames = 0; nextFps = now + 1000;
+            }
 
             if (isMusicPlaying) {
                 instantVol = (Math.sin(now/80)*0.35 + 0.45) + (Math.random()*0.2);
@@ -244,70 +328,42 @@
 
             let tx = mouse.glX, ty = mouse.glY, active = mouse.isDown;
 
-            // --- CYMATIC LOGIC GOD MY MIND IS DYING ---
+            // ── Cymatic path logic (2D, Z is kept planar) ───────────────────────────
             if(cymaticActive && isMusicPlaying) {
                 cPos.timer -= dt;
-                
-                // i want to cry
                 if(cPos.timer <= 0) {
                     let targetX, targetY;
                     let r = Math.random();
-
-                    // 60% chance to target Edges
                     if(r < 0.60) {
-                        // heareaaeaeae
                         if(Math.random() < 0.5) {
-                            // *sob*
-                            targetX = Math.sign(Math.random()-0.5) * (0.85 + Math.random()*0.1); 
+                            targetX = Math.sign(Math.random()-0.5) * (0.85 + Math.random()*0.1);
                             targetY = (Math.random()*2 - 1);
                         } else {
-                            // *sob*
                             targetX = (Math.random()*2 - 1);
-                            targetY = Math.sign(Math.random()-0.5) * (0.85 + Math.random()*0.1); 
+                            targetY = Math.sign(Math.random()-0.5) * (0.85 + Math.random()*0.1);
                         }
                     } else {
-                        // death
-                        targetX = (Math.random()-0.5) * 0.8; 
+                        targetX = (Math.random()-0.5) * 0.8;
                         targetY = (Math.random()-0.5) * 0.8;
                     }
-
-                    // cry revisited
-                    let dx = targetX - cPos.x;
-                    let dy = targetY - cPos.y;
-                    let angle = Math.atan2(dy, dx);
-                    
-                    // Add some random curve/swirl
-                    angle += (Math.random()-0.5) * 0.5;
-
+                    let dx = targetX - cPos.x, dy = targetY - cPos.y;
+                    let angle = Math.atan2(dy, dx) + (Math.random()-0.5) * 0.5;
                     let speed = 0.005 + (instantVol * 0.012);
                     cPos.vx = Math.cos(angle) * speed;
                     cPos.vy = Math.sin(angle) * speed;
-
-                    // Set timer for next decision
-                    cPos.timer = 120 + Math.random()*150;
+                    cPos.timer = 120 + Math.random() * 150;
                 }
-
-                // Apply movement
-                cPos.x += cPos.vx * dt;
-                cPos.y += cPos.vy * dt;
-
-                // grug
-                let hitWall = false;
-                if(cPos.x >= 0.98) { cPos.x = 0.97; cPos.vx *= -1; hitWall = true; }
-                else if(cPos.x <= -0.98) { cPos.x = -0.97; cPos.vx *= -1; hitWall = true; }
-                
-                if(cPos.y >= 0.98) { cPos.y = 0.97; cPos.vy *= -1; hitWall = true; }
-                else if(cPos.y <= -0.98) { cPos.y = -0.97; cPos.vy *= -1; hitWall = true; }
-
-                // If stuck in a corner for some reason, force a push to center
+                cPos.x += cPos.vx * dt; cPos.y += cPos.vy * dt;
+                if(cPos.x >= 0.98)  { cPos.x = 0.97;  cPos.vx *= -1; }
+                else if(cPos.x <= -0.98) { cPos.x = -0.97; cPos.vx *= -1; }
+                if(cPos.y >= 0.98)  { cPos.y = 0.97;  cPos.vy *= -1; }
+                else if(cPos.y <= -0.98) { cPos.y = -0.97; cPos.vy *= -1; }
                 if(Math.abs(cPos.x) > 0.95 && Math.abs(cPos.y) > 0.95) {
                     cPos.vx = -Math.sign(cPos.x) * 0.01;
                     cPos.vy = -Math.sign(cPos.y) * 0.01;
                 }
-
                 tx = cPos.x; ty = cPos.y; active = true;
             }
-            // math paid off i guess
 
             const released = mouse.wasDown && !mouse.isDown && (Date.now()-lastExplosionTime > 1200) && !cymaticActive;
             if(released) lastExplosionTime = Date.now();
@@ -319,83 +375,233 @@
             requestAnimationFrame(animate);
         }
 
+        // ─── WebGL Render + Physics ──────────────────────────────────────────────────
         function runWebGL(dt, released, tx, ty, active) {
             const friction = Math.pow(0.82 + (driftFactor/5)*0.17, dt);
-            for(let i=0; i<count; i++) {
-                const i2 = i*2;
-                let dx = tx - posArr[i2], dy = ty - posArr[i2+1], d = Math.sqrt(dx*dx+dy*dy)||0.001;
+            // Stronger Z spring in cymatic mode (flatten the plane)
+            const zSpring = cymaticActive ? planeSpring * 8 : planeSpring;
+
+            avgZ = 0;
+            for(let i = 0; i < count; i++) {
+                const i3 = i * 3;
+                const px = posArr[i3], py = posArr[i3+1], pz = posArr[i3+2];
+                const vx = velArr[i3], vy = velArr[i3+1];
+                let vz = velArr[i3+2];
+
+                const dx = tx - px, dy = ty - py;
+                const d  = Math.sqrt(dx*dx + dy*dy) || 0.001;
+
                 if(active) {
+                    // XY: attracted + swirl (unchanged from original)
                     const sx = -dy/d, sy = dx/d;
-                    velArr[i2] += (dx * speedArr[i] * dt) + (sx * swirlForce * 0.02 * dt);
-                    velArr[i2+1] += (dy * speedArr[i] * dt) + (sy * swirlForce * 0.02 * dt);
-                    velArr[i2] *= Math.pow(0.88, dt); velArr[i2+1] *= Math.pow(0.88, dt);
+                    velArr[i3]   += (dx * speedArr[i] * dt) + (sx * swirlForce * 0.02 * dt);
+                    velArr[i3+1] += (dy * speedArr[i] * dt) + (sy * swirlForce * 0.02 * dt);
+                    velArr[i3]   *= Math.pow(0.88, dt);
+                    velArr[i3+1] *= Math.pow(0.88, dt);
+                    // Z: spring toward plane, dampen when being drawn
+                    vz -= pz * zSpring * 3.0 * dt;
+                    vz *= Math.pow(0.90, dt);
                 } else if(released) {
                     const force = (1.0/d) * (explosionStrength/20000);
                     const spread = Math.random() * 2.5 + 0.5;
-                    velArr[i2] = (-dx/d)*force*spread; 
-                    velArr[i2+1] = (-dy/d)*force*spread;
-                    velArr[i2] += (dy/d)*0.05; velArr[i2+1] += (-dx/d)*0.05;
+                    velArr[i3]   = (-dx/d) * force * spread;
+                    velArr[i3+1] = (-dy/d) * force * spread;
+                    velArr[i3]   += (dy/d)*0.05;
+                    velArr[i3+1] += (-dx/d)*0.05;
+                    // Z explosion scatter
+                    vz = (Math.random() - 0.5) * force * spread * zScatter * 2.5;
                 } else {
-                    velArr[i2] *= friction; velArr[i2+1] *= friction;
-                    if(blackHoleActive) { velArr[i2] += (dx/d)*0.002*dt; velArr[i2+1] += (dy/d)*0.002*dt; }
+                    // Normal drift: friction + spring back to Z=0 plane
+                    velArr[i3]   *= friction;
+                    velArr[i3+1] *= friction;
+                    vz -= pz * zSpring * dt;   // spring toward 0
+                    vz *= friction;
+
+                    if(blackHoleActive) {
+                        velArr[i3]   += (dx/d) * 0.002 * dt;
+                        velArr[i3+1] += (dy/d) * 0.002 * dt;
+                        // Black hole slightly pulls Z toward 0 too
+                        vz += (-pz / (Math.abs(pz) + 0.1)) * 0.001 * dt;
+                    }
                 }
-                posArr[i2] += velArr[i2]*dt; posArr[i2+1] += velArr[i2+1]*dt;
-                if(posArr[i2]>1) posArr[i2]=-1; else if(posArr[i2]<-1) posArr[i2]=1;
-                if(posArr[i2+1]>1) posArr[i2+1]=-1; else if(posArr[i2+1]<-1) posArr[i2+1]=1;
+
+                velArr[i3+2] = vz;
+
+                // Integrate position
+                posArr[i3]   += velArr[i3]   * dt;
+                posArr[i3+1] += velArr[i3+1] * dt;
+                posArr[i3+2] += velArr[i3+2] * dt;
+
+                // XY wrap-around
+                if(posArr[i3]   >  1) posArr[i3]   = -1;
+                else if(posArr[i3]   < -1) posArr[i3]   =  1;
+                if(posArr[i3+1] >  1) posArr[i3+1] = -1;
+                else if(posArr[i3+1] < -1) posArr[i3+1] =  1;
+
+                // Z hard clamp — keep within visible depth range
+                if(posArr[i3+2] >  1.2) { posArr[i3+2] =  1.2; velArr[i3+2] *= -0.3; }
+                if(posArr[i3+2] < -1.2) { posArr[i3+2] = -1.2; velArr[i3+2] *= -0.3; }
+
+                avgZ += posArr[i3+2];
             }
+
+            // Upload to GPU
             gl.clear(gl.COLOR_BUFFER_BIT);
-            gl.bindBuffer(gl.ARRAY_BUFFER, pBuf); gl.bufferData(gl.ARRAY_BUFFER, posArr.subarray(0, count*2), gl.DYNAMIC_DRAW);
-            const pL = gl.getAttribLocation(prg, 'a_p'); gl.enableVertexAttribArray(pL); gl.vertexAttribPointer(pL, 2, gl.FLOAT, false, 0, 0);
-            gl.bindBuffer(gl.ARRAY_BUFFER, cBuf); gl.bufferData(gl.ARRAY_BUFFER, colArr.subarray(0, count*3), gl.DYNAMIC_DRAW);
-            const cL = gl.getAttribLocation(prg, 'a_c'); gl.enableVertexAttribArray(cL); gl.vertexAttribPointer(cL, 3, gl.FLOAT, false, 0, 0);
-            gl.bindBuffer(gl.ARRAY_BUFFER, sBuf); gl.bufferData(gl.ARRAY_BUFFER, sizeArr.subarray(0, count), gl.STATIC_DRAW);
-            const sL = gl.getAttribLocation(prg, 'a_s'); gl.enableVertexAttribArray(sL); gl.vertexAttribPointer(sL, 1, gl.FLOAT, false, 0, 0);
+            gl.uniform1f(uDepthScale, depthScale);
+
+            gl.bindBuffer(gl.ARRAY_BUFFER, pBuf);
+            gl.bufferData(gl.ARRAY_BUFFER, posArr.subarray(0, count*3), gl.DYNAMIC_DRAW);
+            gl.enableVertexAttribArray(aPos);
+            gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 0, 0);  // 3 floats now
+
+            gl.bindBuffer(gl.ARRAY_BUFFER, cBuf);
+            gl.bufferData(gl.ARRAY_BUFFER, colArr.subarray(0, count*3), gl.DYNAMIC_DRAW);
+            gl.enableVertexAttribArray(aCol);
+            gl.vertexAttribPointer(aCol, 3, gl.FLOAT, false, 0, 0);
+
+            gl.bindBuffer(gl.ARRAY_BUFFER, sBuf);
+            gl.bufferData(gl.ARRAY_BUFFER, sizeArr.subarray(0, count), gl.STATIC_DRAW);
+            gl.enableVertexAttribArray(aSize);
+            gl.vertexAttribPointer(aSize, 1, gl.FLOAT, false, 0, 0);
+
             gl.drawArrays(gl.POINTS, 0, count);
         }
 
+        // ─── Canvas 2D Render + Physics ──────────────────────────────────────────────
         function runCanvas(dt, released, tx, ty, active) {
-            ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(0,0,c2dCanvas.width,c2dCanvas.height);
+            ctx.fillStyle = 'rgba(0,0,0,0.25)';
+            ctx.fillRect(0, 0, c2dCanvas.width, c2dCanvas.height);
+
             const friction = Math.pow(0.82 + (driftFactor/5)*0.17, dt);
-            const w=c2dCanvas.width, h=c2dCanvas.height, hW=w/2, hH=h/2;
-            const targetX = (tx + 1) * hW, targetY = (1 - (ty + 1) * 0.5) * h;
+            const zSpring  = cymaticActive ? planeSpring * 8 : planeSpring;
+            const w = c2dCanvas.width, h = c2dCanvas.height;
+            const hW = w/2, hH = h/2;
+            const camDist = 2.0;
+
+            // Convert mouse GL coords to canvas screen space (at z=0)
+            const targetX = (tx + 1) * hW;
+            const targetY = (1 - (ty + 1) * 0.5) * h;
+
             const colors = [document.getElementById('c1').value, document.getElementById('c2').value, document.getElementById('c3').value];
-            for(let i=0; i<Math.min(count, 120000); i++) {
-                const i2 = i*2;
-                let px=(posArr[i2]+1) * hW, py=(1-(posArr[i2+1]+1)*0.5)*h;
-                let vx=velArr[i2]*hW, vy=-velArr[i2+1]*hH;
-                let dx=targetX-px, dy=targetY-py, dist=Math.sqrt(dx*dx+dy*dy)||1;
-                if(active) { vx += (dx * speedArr[i] + (-dy/dist) * swirlForce) * dt; vy += (dy * speedArr[i] + (dx/dist) * swirlForce) * dt; vx *= 0.88; vy *= 0.88; }
-                else if(released) { 
-                    const f = (1/dist)*(explosionStrength*0.16); 
+
+            for(let i = 0; i < Math.min(count, 120000); i++) {
+                const i3 = i * 3;
+                const pz = posArr[i3+2];
+
+                // Perspective factor
+                const dz = camDist + pz * depthScale;
+                const persp = camDist / Math.max(dz, 0.1);
+
+                // Project to screen
+                let px = (posArr[i3]   * persp + 1) * hW;
+                let py = (1 - (posArr[i3+1] * persp + 1) * 0.5) * h;
+
+                // Velocity in screen space
+                let vx = velArr[i3]   * hW;
+                let vy = -velArr[i3+1] * hH;
+                let vz = velArr[i3+2];
+
+                const dx = targetX - px, dy = targetY - py;
+                const dist = Math.sqrt(dx*dx + dy*dy) || 1;
+
+                if(active) {
+                    vx += (dx * speedArr[i] + (-dy/dist) * swirlForce) * dt;
+                    vy += (dy * speedArr[i] + ( dx/dist) * swirlForce) * dt;
+                    vx *= 0.88; vy *= 0.88;
+                    vz -= pz * zSpring * 3.0 * dt;
+                    vz *= 0.90;
+                } else if(released) {
+                    const f = (1/dist) * (explosionStrength * 0.16);
                     const spread = Math.random() * 2.0 + 1.0;
-                    vx = (-dx/dist)*f*spread; vy = (-dy/dist)*f*spread; 
+                    vx = (-dx/dist) * f * spread;
+                    vy = (-dy/dist) * f * spread;
                     vx += (dy/dist)*2; vy += (-dx/dist)*2;
+                    vz = (Math.random() - 0.5) * f * zScatter * 0.5;
+                } else {
+                    vx *= friction; vy *= friction;
+                    vz -= pz * zSpring * dt;
+                    vz *= friction;
+                    if(blackHoleActive) { vx += (dx/dist)*0.5*dt; vy += (dy/dist)*0.5*dt; }
                 }
-                else { vx *= friction; vy *= friction; if(blackHoleActive) { vx += (dx/dist)*0.5*dt; vy += (dy/dist)*0.5*dt; } }
-                px+=vx*dt; py+=vy*dt;
-                if(px<0) px=w; else if(px>w) px=0; if(py<0) py=h; else if(py>h) py=0;
-                posArr[i2]=(px/hW)-1; posArr[i2+1]=((h-py)/hH)-1; velArr[i2]=vx/hW; velArr[i2+1]=-vy/hH;
-                ctx.fillStyle = colors[i%3]; ctx.fillRect(px, py, sizeArr[i], sizeArr[i]);
+
+                px += vx*dt; py += vy*dt;
+
+                // Wrap screen XY
+                if(px < 0) px = w; else if(px > w) px = 0;
+                if(py < 0) py = h; else if(py > h) py = 0;
+
+                // Store back in GL-style coords
+                posArr[i3]   = (px/hW) - 1;
+                posArr[i3+1] = ((h - py)/hH) - 1;
+                velArr[i3]   = vx/hW;
+                velArr[i3+1] = -vy/hH;
+
+                // Z update
+                velArr[i3+2]  = vz;
+                posArr[i3+2] += vz * dt;
+                if(posArr[i3+2] >  1.2) { posArr[i3+2] =  1.2; velArr[i3+2] *= -0.3; }
+                if(posArr[i3+2] < -1.2) { posArr[i3+2] = -1.2; velArr[i3+2] *= -0.3; }
+
+                // Size + brightness based on depth
+                const brightness = Math.min(1.2, persp * 0.8 + 0.3);
+                const pSize = sizeArr[i] * persp;
+                ctx.globalAlpha = Math.max(0.1, Math.min(1.0, brightness));
+                ctx.fillStyle = colors[i % 3];
+                ctx.fillRect(px, py, pSize, pSize);
             }
+            ctx.globalAlpha = 1.0;
         }
 
+        // ─── UI Bindings ─────────────────────────────────────────────────────────────
         document.getElementById('music-progress').oninput = (e) => player.seekTo((e.target.value/100)*player.getDuration(), true);
         document.getElementById('music-vol-control').oninput = function() { player.setVolume(this.value); document.getElementById('mVolVal').innerText = this.value+'%'; };
         document.getElementById('play-pause-btn').onclick = () => isMusicPlaying ? player.pauseVideo() : player.playVideo();
         document.getElementById('next-track-btn').onclick = () => playNext();
         document.getElementById('prev-track-btn').onclick = () => playPrev();
-        document.getElementById('cymaticBtn').onclick = function() { cymaticActive=!cymaticActive; this.classList.toggle('cymatic-active'); this.innerText=`CYMATIC_PATH: ${cymaticActive?'ON':'OFF'}`; };
-        document.getElementById('bhBtn').onclick = function() { blackHoleActive=!blackHoleActive; this.classList.toggle('active'); this.innerText=`BLACK_HOLE: ${blackHoleActive?'ON':'OFF'}`; };
-        document.getElementById('btnWebGL').onclick = function() { mode='webgl'; glCanvas.style.display='block'; c2dCanvas.style.display='none'; this.classList.add('active'); document.getElementById('btnCanvas').classList.remove('active'); };
-        document.getElementById('btnCanvas').onclick = function() { mode='canvas'; glCanvas.style.display='none'; c2dCanvas.style.display='block'; this.classList.add('active'); document.getElementById('btnWebGL').classList.remove('active'); };
-        document.getElementById('pSlider').oninput = function() { count=parseInt(this.value); document.getElementById('pCount').innerText=count.toLocaleString(); };
-        document.getElementById('fSlider').oninput = function() { driftFactor=parseFloat(this.value); document.getElementById('fVal').innerText=driftFactor; };
-        document.getElementById('eSlider').oninput = function() { explosionStrength=parseFloat(this.value); document.getElementById('ePower').innerText=explosionStrength; };
-        document.getElementById('sSlider').oninput = function() { swirlForce=parseFloat(this.value); document.getElementById('sVal').innerText=swirlForce; };
-        document.getElementById('c1').oninput = updateColors; document.getElementById('c2').oninput = updateColors; document.getElementById('c3').oninput = updateColors;
-        document.getElementById('fs-btn').onclick = () => { if(!document.fullscreenElement) document.documentElement.requestFullscreen(); else document.exitFullscreen(); };
-        document.getElementById('toggle-gui-btn').onclick = () => { const s = document.getElementById('ui').style.display==='none'?'block':'none'; document.getElementById('ui').style.display=s; document.getElementById('music-ui').style.display=s; };
 
+        document.getElementById('cymaticBtn').onclick = function() {
+            cymaticActive = !cymaticActive;
+            this.classList.toggle('cymatic-active');
+            this.innerText = `Cymatic Pathing: ${cymaticActive ? 'ON' : 'OFF'}`;
+        };
+        document.getElementById('bhBtn').onclick = function() {
+            blackHoleActive = !blackHoleActive;
+            this.classList.toggle('active');
+            this.innerText = `Black Hole: ${blackHoleActive ? 'ON' : 'OFF'}`;
+        };
+        document.getElementById('btnWebGL').onclick = function() {
+            mode = 'webgl'; glCanvas.style.display = 'block'; c2dCanvas.style.display = 'none';
+            this.classList.add('active'); document.getElementById('btnCanvas').classList.remove('active');
+        };
+        document.getElementById('btnCanvas').onclick = function() {
+            mode = 'canvas'; glCanvas.style.display = 'none'; c2dCanvas.style.display = 'block';
+            this.classList.add('active'); document.getElementById('btnWebGL').classList.remove('active');
+        };
+
+        document.getElementById('pSlider').oninput = function() { count = parseInt(this.value); document.getElementById('pCount').innerText = count.toLocaleString(); };
+        document.getElementById('fSlider').oninput = function() { driftFactor = parseFloat(this.value); document.getElementById('fVal').innerText = driftFactor; };
+        document.getElementById('eSlider').oninput = function() { explosionStrength = parseFloat(this.value); document.getElementById('ePower').innerText = explosionStrength; };
+        document.getElementById('sSlider').oninput = function() { swirlForce = parseFloat(this.value); document.getElementById('sVal').innerText = swirlForce; };
+
+        document.getElementById('dSlider').oninput = function() { depthScale = parseFloat(this.value); document.getElementById('dVal').innerText = depthScale.toFixed(2); };
+        document.getElementById('spSlider').oninput = function() { planeSpring = parseFloat(this.value); document.getElementById('spVal').innerText = planeSpring.toFixed(4); };
+        document.getElementById('zsSlider').oninput = function() { zScatter = parseFloat(this.value); document.getElementById('zsVal').innerText = zScatter.toFixed(2); };
+
+        document.getElementById('c1').oninput = updateColors;
+        document.getElementById('c2').oninput = updateColors;
+        document.getElementById('c3').oninput = updateColors;
+
+        document.getElementById('fs-btn').onclick = () => {
+            if(!document.fullscreenElement) document.documentElement.requestFullscreen();
+            else document.exitFullscreen();
+        };
+        document.getElementById('toggle-gui-btn').onclick = () => {
+            const s = document.getElementById('ui').style.display === 'none' ? 'block' : 'none';
+            document.getElementById('ui').style.display = s;
+            document.getElementById('music-ui').style.display = s;
+        };
+
+        // ─── Boot ────────────────────────────────────────────────────────────────────
         resize();
         updateColors();
         requestAnimationFrame(animate);
